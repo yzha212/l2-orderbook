@@ -1,0 +1,9 @@
+# Captured market data (regenerated on every run)
+raw/
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
