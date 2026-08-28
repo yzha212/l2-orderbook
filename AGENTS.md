@@ -4,6 +4,7 @@ This repository contains the components that ingests BTC-USD (one symbol only) L
 
 ## Project Setup
 - Dependency management: `pip` and `requirements.txt`, do NOT use other package manager  
+- Python 3.14, pinned via the `python:3.14.7-slim-trixie` base image; code targets 3.14+ syntax
 - Branch from `main` as `feature/<name>` and use Coventional Commits
 
 

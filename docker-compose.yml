@@ -62,3 +62,21 @@ services:
       - 8080:8080
     depends_on:
       - redpanda-0
+
+
+  ingest:
+    container_name: l2-ingest
+    build:
+      # Build from the repo root so COPY can reach both requirements.txt and src/.
+      context: .
+      # The Dockerfile is colocated with the service it builds.
+      dockerfile: src/ingest/Dockerfile
+    # Captures are written to /app/raw inside the container; this surfaces them on the host.
+    volumes:
+      - ./raw:/app/raw
+    # Match the host uid:gid so the .gz files are readable and deletable without sudo.
+    user: "1000:1000"
+    networks:
+      - redpanda_network
+    depends_on:
+      - redpanda-0

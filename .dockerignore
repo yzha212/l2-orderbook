@@ -1,0 +1,17 @@
+# The build context is the repository root, so keep bulky and irrelevant paths out of it.
+
+# Captured market data: megabytes of gzipped frames, regenerated on every run.
+raw/
+data/
+
+# Local Python bytecode and virtualenvs must never leak into the image.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# History and prose are not needed to run the ingest.
+.git/
+.gitignore
+docs/
+*.md
