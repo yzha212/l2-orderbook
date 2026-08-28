@@ -4,8 +4,6 @@ This is an exploration spike: everything lives in this one file, and every line 
 a short comment so the flow can be read top to bottom.
 """
 
-from __future__ import annotations  # let us write modern type hints like list[str] everywhere
-
 import argparse  # parses the --duration flag from the command line
 import gzip  # writes the capture file compressed, without a third-party library
 import json  # turns our subscribe dicts into JSON text to send over the socket
