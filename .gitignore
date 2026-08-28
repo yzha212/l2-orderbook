@@ -7,3 +7,6 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# Machine-local compose overrides (VPN proxy wiring); not portable to other hosts
+docker-compose.override.yml
