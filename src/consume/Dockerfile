@@ -1,0 +1,22 @@
+# Image for the consume service: reads the captured Level 2 frames back off the topic.
+# Build context is the repository root, not this folder -- see docker-compose.yml.
+FROM python:3.14.7-slim-trixie
+
+# Send print() output straight through so `docker logs` shows the summary lines live.
+ENV PYTHONUNBUFFERED=1
+# Skip writing .pyc files; the container filesystem is thrown away after every run.
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Everything below lives under /app, so `python -m src.consume.main` resolves from there.
+WORKDIR /app
+
+# Copy the requirements on their own first, so the install layer survives source edits.
+COPY requirements.txt .
+# Install the pinned dependencies; --no-cache-dir keeps the wheel cache out of the image.
+RUN pip install --no-cache-dir --timeout 120 --retries 10 -r requirements.txt
+
+# Copy the source last, because it changes most often and invalidates the fewest layers.
+COPY src/ src/
+
+# Default run: read up to the built-in cap, then exit.
+CMD ["python", "-m", "src.consume.main"]

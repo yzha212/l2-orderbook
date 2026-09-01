@@ -39,6 +39,14 @@ services:
       - 18082:18082
       - 19092:19092
       - 19644:9644
+    # The broker accepts connections before it can serve topic admin calls, so anything
+    # that creates topics must gate on this, not on the container merely starting.
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
   console:
     container_name: redpanda-console
     image: docker.redpanda.com/redpandadata/console:v3.11.0
@@ -61,8 +69,38 @@ services:
     ports:
       - 8080:8080
     depends_on:
-      - redpanda-0
+      redpanda-0:
+        condition: service_healthy
 
+  topic-init:
+    container_name: l2-topic-init
+    image: docker.redpanda.com/redpandadata/redpanda:v25.1.1
+    # One-shot: create the stage-2 buffer topic, verify it, exit. Not a long-running service.
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -e
+        # `rpk topic create` exits non-zero when the topic already exists, so tolerate that
+        # and let the check below decide. This keeps repeated `up` runs idempotent.
+        rpk topic create l2.raw.btc-usd -p 1 -r 1 \
+          -c retention.ms=86400000 \
+          -c max.message.bytes=8388608 \
+          -X brokers=redpanda-0:9092 || true
+        # create is a no-op on an existing topic, so set the size limit unconditionally too:
+        # the opening L2 snapshot frame is ~5 MB and the 1 MiB default rejects it.
+        rpk topic alter-config l2.raw.btc-usd --set max.message.bytes=8388608 \
+          -X brokers=redpanda-0:9092
+        # Real gate: fail the service if the topic is not actually there afterwards.
+        rpk topic list -X brokers=redpanda-0:9092 | grep -q '^l2.raw.btc-usd'
+        # Print the settled config so `docker compose logs topic-init` shows what landed.
+        rpk topic describe l2.raw.btc-usd -X brokers=redpanda-0:9092
+    networks:
+      - redpanda_network
+    depends_on:
+      redpanda-0:
+        condition: service_healthy
+    restart: "no"
 
   ingest:
     container_name: l2-ingest
@@ -71,12 +109,30 @@ services:
       context: .
       # The Dockerfile is colocated with the service it builds.
       dockerfile: src/ingest/Dockerfile
-    # Captures are written to /app/raw inside the container; this surfaces them on the host.
-    volumes:
-      - ./raw:/app/raw
-    # Match the host uid:gid so the .gz files are readable and deletable without sudo.
-    user: "1000:1000"
+    # Frames go straight to the topic, so the container needs no bind mount and writes no files.
+    environment:
+      REDPANDA_BROKERS: redpanda-0:9092
     networks:
       - redpanda_network
     depends_on:
-      - redpanda-0
+      topic-init:
+        condition: service_completed_successfully
+
+  consume:
+    container_name: l2-consume
+    build:
+      # Build from the repo root so COPY can reach both requirements.txt and src/.
+      context: .
+      # The Dockerfile is colocated with the service it builds.
+      dockerfile: src/consume/Dockerfile
+    # Reads from the topic and prints; no bind mount, no files written.
+    environment:
+      REDPANDA_BROKERS: redpanda-0:9092
+    networks:
+      - redpanda_network
+    # Only the topic must exist. Starting from the earliest offset means this does not need
+    # the ingest service to be running, or to have finished, to see its frames.
+    depends_on:
+      topic-init:
+        condition: service_completed_successfully
+
