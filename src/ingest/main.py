@@ -79,7 +79,7 @@ def capture(duration: float) -> None:
         ws.send(json.dumps(heartbeats))
         level2 = {"type": "subscribe", "product_ids": [PRODUCT_ID], "channel": "level2"}
         ws.send(json.dumps(level2))
-        print(f"subscribed to level2 for {PRODUCT_ID}")
+        print(f"subscribed to heartbeats and level2 for {PRODUCT_ID}")
 
     def on_message(ws: websocket.WebSocketApp, message: str) -> None:
         """Publish one incoming frame, closing the socket once the cap is reached."""
