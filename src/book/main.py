@@ -3,6 +3,9 @@
 Frames are turned into typed objects by src.decode.messages and printed as a single
 identifying line each -- the opening snapshot is megabytes, so dumping payloads is not
 viable -- and nothing is written to disk. The book itself is not built here yet.
+
+Every frame is also checked against the exchange's own sequence number, so a frame that
+never reached us is named on the line where it went missing rather than passed on unnoticed.
 """
 
 import argparse
@@ -61,11 +64,68 @@ def build_consumer() -> Consumer:
     )
 
 
-def describe(message: Message) -> str:
+class SequenceWatch:
+    """Track the exchange's frame counter so a missed frame is named rather than passed on.
+
+    Every frame one connection carries -- level2, heartbeats, subscription acknowledgements
+    alike -- has a sequence_num that goes up by exactly one. The heartbeats subscription is
+    what makes that worth checking: a heartbeat lands about once a second even when the book
+    is quiet, so the counter keeps moving and a frame lost during a lull still shows as a jump.
+    """
+
+    def __init__(self) -> None:
+        """Start with no history, which is what lets the first frame set the baseline."""
+        self.last: int | None = None  # the previous frame's counter, None until the first one
+        self.checked = 0  # frames that carried a counter at all, which is what a gap is out of
+        self.gaps = 0  # times the counter jumped, each jump one run of frames we never saw
+        self.missed = 0  # how many frames those jumps add up to
+
+    def check(self, frame: Frame) -> str:
+        """Record what one frame does to the sequence.
+
+        A counter lower than the one before it is passed over in silence: that is either a
+        frame that arrived out of order, which the exchange says can be ignored, or a second
+        capture run in the same topic. Either way the new value becomes the baseline, so the
+        frames after it stay checkable.
+
+        Args:
+            frame: The typed frame decode_frame returned.
+
+        Returns:
+            A note to append to the summary line, starting with a space, or an empty string
+            when the counter did what it should.
+        """
+        try:  # EAFP: an exchange error frame is the only kind that carries no counter at all
+            sequence = frame.sequence_num
+        except AttributeError:
+            return ""
+        if sequence is None:  # an unmodelled channel whose frame carried no counter either
+            return ""
+        previous = self.last  # read before the update below, because the test needs both
+        self.last = sequence
+        self.checked += 1
+        if previous is None or sequence <= previous + 1:  # the first frame, or an unbroken run
+            return ""
+        missed = sequence - previous - 1  # every counter the exchange used that we never saw
+        self.gaps += 1
+        self.missed += missed
+        return f" [gap seq {previous}->{sequence} missed {missed}]"
+
+    def report(self) -> str:
+        """Summarise what the whole run found.
+
+        Returns:
+            One line naming how much was checked and what broke.
+        """
+        return f"[stream] checked {self.checked} frames, {self.gaps} gaps ({self.missed} missed)"
+
+
+def describe(message: Message, watch: SequenceWatch) -> str:
     """Build the one-line summary printed for a single record.
 
     Args:
         message: The record fetched from the topic.
+        watch: The tracker, updated with whatever counter this frame turned out to carry.
 
     Returns:
         A line carrying the Kafka offset and what the decoded frame turned out to be.
@@ -78,7 +138,8 @@ def describe(message: Message) -> str:
     except msgspec.DecodeError:  # not JSON at all, so there is nothing to report but bytes
         preview = message.value()[:PAYLOAD_PREVIEW].decode("utf-8", errors="replace")
         return f"offset={offset} [unparsed] {preview}"
-    return f"offset={offset} channel={channel_of(frame)} {summarise(frame)}"
+    note = watch.check(frame)  # empty unless this frame's counter skipped ahead
+    return f"offset={offset} channel={channel_of(frame)} {summarise(frame)}{note}"
 
 
 def summarise(frame: Frame) -> str:
@@ -120,6 +181,7 @@ def consume(max_messages: int, idle_timeout: float) -> None:
         idle_timeout: Seconds of empty polls to tolerate before concluding there is no more.
     """
     consumer = build_consumer()  # one consumer for the whole run, closed by the finally below
+    watch = SequenceWatch()  # one tracker for the whole replay, reported in the finally below
     consumer.subscribe([TOPIC])  # group subscription, so the broker assigns us the partitions
     print(f"subscribed to {TOPIC} at {BROKERS} as group {GROUP_ID}")
     read = 0  # records actually summarised, which is what the closing total reports
@@ -138,7 +200,7 @@ def consume(max_messages: int, idle_timeout: float) -> None:
                 if error.code() != KafkaError._PARTITION_EOF:  # EOF is a marker, not a failure
                     print(f"[error] {error}")
                 continue
-            print(describe(message))
+            print(describe(message, watch))
             read += 1
             last_record = time.monotonic()  # a real record restarts the idle clock
         else:  # the while condition failed, so the cap is what ended the loop
@@ -150,6 +212,7 @@ def consume(max_messages: int, idle_timeout: float) -> None:
         consumer.close()  # leave the group now rather than waiting out the session timeout
         elapsed = time.monotonic() - started
         print(f"read {read} records in {elapsed:.1f}s from {TOPIC} at {BROKERS}")
+        print(watch.report())  # says plainly whether the run saw the whole stream
         if reason == "idle":  # say so, because a short run otherwise looks like a failure
             print(f"[done] stopped after {idle_timeout:.0f}s with no new records")
 
