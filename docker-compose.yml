@@ -118,21 +118,24 @@ services:
       topic-init:
         condition: service_completed_successfully
 
-  consume:
-    container_name: l2-consume
+  book:
+    container_name: l2-book
     build:
       # Build from the repo root so COPY can reach both requirements.txt and src/.
       context: .
       # The Dockerfile is colocated with the service it builds.
-      dockerfile: src/consume/Dockerfile
+      dockerfile: src/book/Dockerfile
     # Reads from the topic and prints; no bind mount, no files written.
     environment:
       REDPANDA_BROKERS: redpanda-0:9092
     networks:
       - redpanda_network
-    # Only the topic must exist. Starting from the earliest offset means this does not need
-    # the ingest service to be running, or to have finished, to see its frames.
+    # Ingest is a one-shot capture capped ~20 s; wait for it to finish so the topic provably
+    # holds frames first. Without the gate, book races ingest's proxy+websocket+snapshot path
+    # on an empty topic and can idle out with 0 records.
     depends_on:
       topic-init:
+        condition: service_completed_successfully
+      ingest:
         condition: service_completed_successfully
 

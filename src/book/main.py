@@ -1,23 +1,35 @@
 """Read the raw Coinbase Level 2 frames back off the Redpanda topic and summarise each one.
 
-This is an exploration spike: everything lives in this one file. Frames are printed as a single
-identifying line each -- the opening snapshot is megabytes, so dumping payloads is not viable --
-and nothing is decoded into typed objects or written to disk.
+Frames are turned into typed objects by src.decode.messages and printed as a single
+identifying line each -- the opening snapshot is megabytes, so dumping payloads is not
+viable -- and nothing is written to disk. The book itself is not built here yet.
 """
 
 import argparse
-import json
 import os  # reads the broker list from the environment
 import time
 
+import msgspec  # imported for the decode errors the stage 3 boundary raises
 from confluent_kafka import Consumer, KafkaError, Message  # librdkafka client
+
+from src.decode.messages import (  # stage 3: the one place raw JSON becomes typed objects
+    ErrorFrame,
+    Frame,
+    HeartbeatFrame,
+    L2Frame,
+    SubscriptionsFrame,
+    UnknownFrame,
+    channel_of,
+    decode_frame,
+    event_type,
+)
 
 TOPIC = "l2.raw.btc-usd"  # must match the topic `topic-init` creates in docker-compose.yml
 BROKERS = os.environ.get("REDPANDA_BROKERS", "redpanda-0:9092")  # host runs use localhost:19092
-GROUP_ID = "l2-consume"  # the consumer group this spike joins
+GROUP_ID = "l2-book"  # the consumer group this reader joins
 MAX_MESSAGES = 500  # exploration cap, paired with the producer's MAX_FRAMES
 MAX_MESSAGE_BYTES = 20 * 1024 * 1024  # the opening snapshot runs ~5 MB, over the 1 MB default
-IDLE_TIMEOUT = 10.0  # seconds of empty polls before concluding the topic has no more for us
+IDLE_TIMEOUT = 20.0  # seconds of empty polls before concluding the topic has no more for us
 POLL_TIMEOUT = 1.0  # seconds each poll waits before returning None
 PAYLOAD_PREVIEW = 120  # characters of a malformed frame to show, so the log stays readable
 
@@ -56,23 +68,48 @@ def describe(message: Message) -> str:
         message: The record fetched from the topic.
 
     Returns:
-        A line carrying the Kafka offset and the frame's own sequence number.
+        A line carrying the Kafka offset and what the decoded frame turned out to be.
     """
     offset = message.offset()  # the broker's position, independent of the exchange's numbering
-    try:  # EAFP: parse, and only deal with non-JSON if the topic actually holds some
-        frame = json.loads(message.value())
-    except json.JSONDecodeError:  # keep the loop alive; a bad frame is data, not a crash
+    try:  # EAFP: decode, and only deal with the frames stage 3 refuses if there are any
+        frame = decode_frame(message.value())
+    except msgspec.ValidationError as error:  # listed first, because it subclasses DecodeError
+        return f"offset={offset} [invalid] {error}"  # refused, so it never reaches a book
+    except msgspec.DecodeError:  # not JSON at all, so there is nothing to report but bytes
         preview = message.value()[:PAYLOAD_PREVIEW].decode("utf-8", errors="replace")
         return f"offset={offset} [unparsed] {preview}"
-    sequence = frame.get("sequence_num")  # top level on every Coinbase frame
-    channel = frame.get("channel")  # l2_data for book traffic, subscriptions for the ack
-    line = f"offset={offset} seq={sequence} channel={channel}"
-    events = frame.get("events") or []  # the subscriptions ack has events but no book events
-    event = events[0] if events else {}
-    if "type" in event:  # only book frames carry a type and a batch of price-level updates
-        updates = event.get("updates") or []
-        line += f" type={event['type']} updates={len(updates)}"
-    return line
+    return f"offset={offset} channel={channel_of(frame)} {summarise(frame)}"
+
+
+def summarise(frame: Frame) -> str:
+    """Describe what one decoded frame carries, beyond the channel it came from.
+
+    Args:
+        frame: The typed frame decode_frame returned.
+
+    Returns:
+        The part of the summary line that differs from one frame type to the next.
+    """
+    match frame:  # a branch per type, which is what decoding into typed objects bought us
+        case L2Frame():
+            events = " ".join(
+                f"type={event_type(event)} levels={len(event.updates)}" for event in frame.events
+            )
+            return f"seq={frame.sequence_num} {events}"
+        case HeartbeatFrame():
+            counters = " ".join(f"counter={tick.heartbeat_counter}" for tick in frame.events)
+            return f"seq={frame.sequence_num} {counters}"
+        case SubscriptionsFrame():
+            active = " ".join(
+                f"{name}={','.join(products)}"
+                for event in frame.events
+                for name, products in event.subscriptions.items()
+            )
+            return f"seq={frame.sequence_num} {active}"
+        case ErrorFrame():
+            return f"[exchange error] {frame.message}"
+        case UnknownFrame():
+            return f"seq={frame.sequence_num} [not modelled]"
 
 
 def consume(max_messages: int, idle_timeout: float) -> None:

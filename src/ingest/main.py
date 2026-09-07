@@ -75,8 +75,8 @@ def capture(duration: float) -> None:
 
     def on_open(ws: websocket.WebSocketApp) -> None:
         """Send our subscriptions as soon as the socket is connected."""
-        # heartbeats = {"type": "subscribe", "channel": "heartbeats"}
-        # ws.send(json.dumps(heartbeats))
+        heartbeats = {"type": "subscribe", "channel": "heartbeats"}
+        ws.send(json.dumps(heartbeats))
         level2 = {"type": "subscribe", "product_ids": [PRODUCT_ID], "channel": "level2"}
         ws.send(json.dumps(level2))
         print(f"subscribed to level2 for {PRODUCT_ID}")

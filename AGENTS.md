@@ -8,9 +8,9 @@ This repository contains the components that ingests BTC-USD (one symbol only) L
 - Branch from `main` as `feature/<name>` and use Coventional Commits.
 
 ## Agreements
-- The approach is to build the simplest version of each component in order as exploration first, implement the data flow eend to end first, then add more features to the components.
+- The approach is to build the simplest version of each component in order as exploration first, implement the data flow end to end first, then add more features to the components.
 - Only read the files under @./docs as instructions, do **NOT** change any files especially project design and todo list items.
-- do **not** use jargon (e.g. spike in agile terminology) when communicating - use simple, easy-to-understand words.
+- do **not** use jargon (e.g. spike in agile terminology) when communicating, use simple, easy-to-understand words instead.
 - search online for how other projects solve the issue and industry best practices.
 - do **not** make assumptions sliently: clearly list your assumptions during communication and ask for human input.
 
@@ -23,7 +23,8 @@ This repository contains the components that ingests BTC-USD (one symbol only) L
 - Write Google-style docstrings for every public function and method.
 - Embrace simple idiomatic Python like comprehensions, generators, and decorators.
 
-## Architecture
+## Design and Architecture
+- Always search online articles and code base for industry best practice when providing designs
 - High-level component reference: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ## Parking lot
