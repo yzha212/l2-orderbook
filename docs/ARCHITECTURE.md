@@ -16,7 +16,7 @@ frame as it arrived, and maintains a verified in-memory copy of the order book f
 - role: Hold the websocket connection and record every incoming frame exactly as it arrived,
   before any parsing, together with connect and disconnect markers.
 - output: the same frames obtained from WebSocket handed to the buffer.
-- guarantee: Arrival timestamps never move backwards.
+- guarantee: Arrival timestamps never move backwards. Missed frames and stalled streams are detected, not tolerated — on any doubt the book is discarded and rebuilt from a fresh snapshot.
 
 ## 2. buffer
 
@@ -30,7 +30,7 @@ frame as it arrived, and maintains a verified in-memory copy of the order book f
 - role: Turn raw JSON frames into typed objects at a single boundary, so nothing downstream ever
   touches raw text.
 - output: Typed messages — an order-book snapshot, an order-book update — each in an
-  envelope carrying the channel, the sequence number, and the capture timestamps.
+  envelope carrying the channel, the sequence number.
 - guarantee: Malformed input fails here rather than silently corrupting later stages, and prices
   and sizes stay strings end to end.
 
@@ -39,10 +39,12 @@ frame as it arrived, and maintains a verified in-memory copy of the order book f
 - role: Maintain the live bid and ask book by loading a full snapshot and then applying
   incremental updates; a zero quantity removes a price level.
 - output: The current order book.
-- guarantee: Missed frames and stalled streams are detected, not tolerated — on any doubt the
-  book is discarded and rebuilt from a fresh snapshot. Best bid stays below best ask, and sizes
-  are never negative.
+- guarantee:  Best bid stays below best ask, and sizes are never negative.
+
+## 5. live dashboard
+
+- role: showing the live trading book in terminal with latency and metrics such as bid-ask spread
+- output: None as it is the "frontend"
 
 ## out of scope
-
 Storage and validation and query are deliberately not described in this document.
