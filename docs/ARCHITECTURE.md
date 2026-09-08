@@ -8,7 +8,7 @@ channel: level2
 
 # Architecture
 
-This project ingests the live Coinbase Advanced Trade Level 2 stream for BTC-USD, records every
+This project ingests the live Coinbase Advanced Trade Level 2 stream for BTC-USD (this symbol only), records every
 frame as it arrived, and maintains a verified in-memory copy of the order book from it.
 
 ## 1. capture
@@ -38,13 +38,55 @@ frame as it arrived, and maintains a verified in-memory copy of the order book f
 
 - role: Maintain the live bid and ask book by loading a full snapshot and then applying
   incremental updates; a zero quantity removes a price level.
-- output: The current order book.
+- output: The current top 10 order book, published every 100 ms, use the most recent frame applied as the timestamp
 - guarantee:  Best bid stays below best ask, and sizes are never negative.
 
 ## 5. live dashboard
 
 - role: showing the live trading book in terminal with latency and metrics such as bid-ask spread
-- output: None as it is the "frontend"
+- output: 10 frames per second, metrics to be decided
+
+## Flow chart
+
+Coinbase WS                                                                                                        
+     |                                                                                                              
+   ingest                                          
+     |                                                                                                              
+ l2.raw.btc-usd                                             
+     |                                                                                     
+     +--> raw archiver                                 
+     |                                                                                                              
+     +--> book builder                                
+     |                                                                                                
+     |                                                                                                              
+ l2.book.btc-usd                                          
+     |                                                                                                              
+     +--> dashboard                                
+     |                                                                                                              
+     +--> book archiver
+
+```mermaid
+flowchart TD
+    WS(["Coinbase WS<br/>level2 + heartbeats"])
+    ING["<b>ingest</b><br/>src/ingest/main.py"]
+    RAW[("<b>l2.raw.btc-usd</b><br/>1 partition · 24h · 8 MiB max<br/>raw exchange JSON, byte for byte")]
+    ARCHR["<b>raw archiver</b><br/>group l2-raw-archive"]
+    BOOK["<b>book builder</b><br/>src/book/main.py + book.py<br/>group l2-book"]
+    BTOP[("<b>l2.book.btc-usd</b><br/>1 partition · 1h · delete<br/>top 10 + book timestamp")]
+    DASH["<b>dashboard</b><br/>group l2-dashboard"]
+    ARCHB["<b>book archiver</b><br/>group l2-book-archive"]
+    FRAW[/"raw/<br/>NDJSON + zstd, hourly"/]
+    FDAT[/"data/<br/>NDJSON + zstd, hourly"/]
+
+    WS -->|frames verbatim| ING
+    ING -->|1 record per frame| RAW
+    RAW -->|earliest · commits| ARCHR --> FRAW
+    RAW -->|earliest · commits| BOOK
+    BOOK -->|top 10 every 100 ms| BTOP
+    BTOP -->|latest · no commits| DASH
+    BTOP -->|earliest · commits| ARCHB --> FDAT
+```
 
 ## out of scope
 Storage and validation and query are deliberately not described in this document.
+

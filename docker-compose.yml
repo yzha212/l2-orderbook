@@ -128,6 +128,11 @@ services:
     # Reads from the topic and prints; no bind mount, no files written.
     environment:
       REDPANDA_BROKERS: redpanda-0:9092
+      # The consumer group this reader joins. Each service reading a topic needs its own:
+      # members of one group split the partitions between them instead of each getting a
+      # copy, so on this single-partition topic a shared id leaves one service reading
+      # nothing at all, with no error to say so.
+      CONSUMER_GROUP: l2-book
     networks:
       - redpanda_network
     # Ingest is a one-shot capture capped ~20 s; wait for it to finish so the topic provably

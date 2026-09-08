@@ -1,11 +1,12 @@
-"""Read the raw Coinbase Level 2 frames back off the Redpanda topic and summarise each one.
+"""Read the raw Coinbase Level 2 frames back off the Redpanda topic and build the book.
 
-Frames are turned into typed objects by src.decode.messages and printed as a single
-identifying line each -- the opening snapshot is megabytes, so dumping payloads is not
-viable -- and nothing is written to disk. The book itself is not built here yet.
+Frames are turned into typed objects by src.decode.messages, applied to the in-memory book
+in src.book.book, and printed as a single identifying line each -- the opening snapshot is
+megabytes, so dumping payloads is not viable -- and nothing is written to disk.
 
 Every frame is also checked against the exchange's own sequence number, so a frame that
-never reached us is named on the line where it went missing rather than passed on unnoticed.
+never reached us is named on the line where it went missing rather than passed on unnoticed;
+a gap marks the book doubtful, because from then on it may have drifted from the exchange.
 """
 
 import argparse
@@ -15,6 +16,7 @@ import time
 import msgspec  # imported for the decode errors the stage 3 boundary raises
 from confluent_kafka import Consumer, KafkaError, Message  # librdkafka client
 
+from src.book.book import OrderBook  # stage 4: the in-memory book these frames build
 from src.decode.messages import (  # stage 3: the one place raw JSON becomes typed objects
     ErrorFrame,
     Frame,
@@ -29,7 +31,7 @@ from src.decode.messages import (  # stage 3: the one place raw JSON becomes typ
 
 TOPIC = "l2.raw.btc-usd"  # must match the topic `topic-init` creates in docker-compose.yml
 BROKERS = os.environ.get("REDPANDA_BROKERS", "redpanda-0:9092")  # host runs use localhost:19092
-GROUP_ID = "l2-book"  # the consumer group this reader joins
+GROUP_ID = os.environ.get("CONSUMER_GROUP", "l2-book")  # compose sets it; default for host runs
 MAX_MESSAGES = 500  # exploration cap, paired with the producer's MAX_FRAMES
 MAX_MESSAGE_BYTES = 20 * 1024 * 1024  # the opening snapshot runs ~5 MB, over the 1 MB default
 IDLE_TIMEOUT = 20.0  # seconds of empty polls before concluding the topic has no more for us
@@ -120,12 +122,13 @@ class SequenceWatch:
         return f"[stream] checked {self.checked} frames, {self.gaps} gaps ({self.missed} missed)"
 
 
-def describe(message: Message, watch: SequenceWatch) -> str:
-    """Build the one-line summary printed for a single record.
+def describe(message: Message, watch: SequenceWatch, book: OrderBook) -> str:
+    """Apply one record to the book and build the one-line summary printed for it.
 
     Args:
         message: The record fetched from the topic.
         watch: The tracker, updated with whatever counter this frame turned out to carry.
+        book: The book, updated when the frame turns out to carry level2 events.
 
     Returns:
         A line carrying the Kafka offset and what the decoded frame turned out to be.
@@ -139,6 +142,11 @@ def describe(message: Message, watch: SequenceWatch) -> str:
         preview = message.value()[:PAYLOAD_PREVIEW].decode("utf-8", errors="replace")
         return f"offset={offset} [unparsed] {preview}"
     note = watch.check(frame)  # empty unless this frame's counter skipped ahead
+    if note:  # a frame we never saw may have moved a level the book still shows
+        book.doubtful = True
+    if isinstance(frame, L2Frame):  # the only channel carrying levels; the rest inform nothing
+        book.apply(frame)
+        note = f" {book.quote()}{note}"  # show the book filling up, frame by frame
     return f"offset={offset} channel={channel_of(frame)} {summarise(frame)}{note}"
 
 
@@ -182,6 +190,7 @@ def consume(max_messages: int, idle_timeout: float) -> None:
     """
     consumer = build_consumer()  # one consumer for the whole run, closed by the finally below
     watch = SequenceWatch()  # one tracker for the whole replay, reported in the finally below
+    book = OrderBook()  # one book for the whole replay, reported in the finally below
     consumer.subscribe([TOPIC])  # group subscription, so the broker assigns us the partitions
     print(f"subscribed to {TOPIC} at {BROKERS} as group {GROUP_ID}")
     read = 0  # records actually summarised, which is what the closing total reports
@@ -200,7 +209,7 @@ def consume(max_messages: int, idle_timeout: float) -> None:
                 if error.code() != KafkaError._PARTITION_EOF:  # EOF is a marker, not a failure
                     print(f"[error] {error}")
                 continue
-            print(describe(message, watch))
+            print(describe(message, watch, book))
             read += 1
             last_record = time.monotonic()  # a real record restarts the idle clock
         else:  # the while condition failed, so the cap is what ended the loop
@@ -213,6 +222,7 @@ def consume(max_messages: int, idle_timeout: float) -> None:
         elapsed = time.monotonic() - started
         print(f"read {read} records in {elapsed:.1f}s from {TOPIC} at {BROKERS}")
         print(watch.report())  # says plainly whether the run saw the whole stream
+        print(book.status())  # and what the book ended up holding, as of which frame
         if reason == "idle":  # say so, because a short run otherwise looks like a failure
             print(f"[done] stopped after {idle_timeout:.0f}s with no new records")
 
