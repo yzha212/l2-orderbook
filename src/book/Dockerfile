@@ -18,5 +18,5 @@ RUN pip install --no-cache-dir --timeout 120 --retries 10 -r requirements.txt
 # Copy the source last, because it changes most often and invalidates the fewest layers.
 COPY src/ src/
 
-# Default run: read up to the built-in cap, then exit.
+# Default run: read and build the book until the container is stopped.
 CMD ["python", "-m", "src.book.main"]

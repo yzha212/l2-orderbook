@@ -87,9 +87,15 @@ services:
           -c retention.ms=86400000 \
           -c max.message.bytes=8388608 \
           -X brokers=redpanda-0:9092 || true
-        # create is a no-op on an existing topic, so set the size limit unconditionally too:
+        # create is a no-op on an existing topic, so set the limits unconditionally too:
         # the opening L2 snapshot frame is ~5 MB and the 1 MiB default rejects it.
-        rpk topic alter-config l2.raw.btc-usd --set max.message.bytes=8388608 \
+        # retention.ms is set here as well because create never reapplies it to a topic that
+        # already exists, and a capture that now runs all day needs that ceiling to hold.
+        # segment.ms closes a segment every hour, because retention only deletes closed ones.
+        rpk topic alter-config l2.raw.btc-usd \
+          --set max.message.bytes=8388608 \
+          --set retention.ms=86400000 \
+          --set segment.ms=3600000 \
           -X brokers=redpanda-0:9092
         # Real gate: fail the service if the topic is not actually there afterwards.
         rpk topic list -X brokers=redpanda-0:9092 | grep -q '^l2.raw.btc-usd'
@@ -117,6 +123,15 @@ services:
     depends_on:
       topic-init:
         condition: service_completed_successfully
+      # Starts the book container first, as a nudge and nothing more. Compose guarantees start
+      # order but never readiness, so correctness cannot rest on it -- and does not need to:
+      # the topic is the buffer and the book waits on an empty one, so either order is fine.
+      book:
+        condition: service_started
+    # The capture runs until stopped now, so a crash should bring it straight back.
+    restart: unless-stopped
+    # The producer drains its queue for up to 10 s on stop; leave room before the kill.
+    stop_grace_period: 15s
 
   book:
     container_name: l2-book
@@ -135,12 +150,13 @@ services:
       CONSUMER_GROUP: l2-book
     networks:
       - redpanda_network
-    # Ingest is a one-shot capture capped ~20 s; wait for it to finish so the topic provably
-    # holds frames first. Without the gate, book races ingest's proxy+websocket+snapshot path
-    # on an empty topic and can idle out with 0 records.
+    # Only the topic has to exist. The reader now waits on an empty one instead of giving up,
+    # so it no longer matters whether ingest has published anything yet, or even started.
     depends_on:
       topic-init:
         condition: service_completed_successfully
-      ingest:
-        condition: service_completed_successfully
+    # Reads until stopped, so a crash should bring it straight back. Be aware that a restart
+    # replays the retained topic from the beginning, which is how it finds a snapshot again.
+    restart: unless-stopped
+    stop_grace_period: 15s
 
