@@ -1,7 +1,7 @@
 """Publish the Coinbase Advanced Trade Level 2 feed for BTC-USD to a Redpanda topic.
 
-This is an exploration spike: everything lives in this one file. Frames are forwarded to the
-topic exactly as they arrived, one Kafka record per frame, and nothing is written to disk.
+Everything for this service lives in this one file. Frames are forwarded to the topic
+exactly as they arrived, one Kafka record per frame, and nothing is written to disk.
 
 The capture runs until something stops it. A lost connection is dialled again instead of
 ending the run, and a stop request drains the producer queue before the process exits.

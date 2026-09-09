@@ -310,7 +310,8 @@ def consume(verbose: bool) -> None:
     """Read records from the topic and keep the book up to date until stopped.
 
     Args:
-        verbose: True to print a summary line for every record, as the spike used to.
+        verbose: True to print a summary line for every record, which is what this
+            service used to do for every frame.
     """
     consumer = build_consumer()  # one consumer for the whole run, closed by the finally below
     watch = SequenceWatch()  # one tracker for the whole run, reported in the finally below

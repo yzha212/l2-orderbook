@@ -4,7 +4,7 @@ FROM python:3.14.7-slim-trixie
 
 # Send print() output straight through so `docker logs` shows capture progress live.
 ENV PYTHONUNBUFFERED=1
-# Skip writing .pyc files; the container filesystem is thrown away after every run.
+# Skip writing .pyc files; the image is rebuilt rather than updated in place.
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Everything below lives under /app, so `python -m src.ingest.main` resolves from there.

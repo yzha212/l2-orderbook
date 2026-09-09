@@ -11,7 +11,7 @@ This repository contains the components that ingests BTC-USD (one symbol only) L
 - The approach is to build the simplest version of each component in order as exploration first, implement the data flow end to end first, then add more features to the components.
 - Only read the files under @./docs as instructions, do **NOT** change any files especially project design and todo list items.
 - Read the documents and code inside the repo, as well as industry best practice online, before proposing code changes.
-- do **not** use jargon (e.g. spike in agile terminology) when communicating, use simple, easy-to-understand words instead.
+- do **not** use jargon (e.g. spike in agile terminology) when communicating, use simple, easy-to-understand words instead, do not compact your wording too much.
 - search online for how other projects solve the issue and industry best practices.
 - do **not** make assumptions sliently: clearly list your assumptions during communication and ask for human input.
 
@@ -29,5 +29,5 @@ This repository contains the components that ingests BTC-USD (one symbol only) L
 - High-level component reference: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ## Parking lot
-- ./docs/TODO.md, do **not** load this file to context unless prompted.
+- ./docs/todo.md, do **not** load this file to context unless prompted.
 

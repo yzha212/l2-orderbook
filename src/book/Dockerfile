@@ -2,9 +2,9 @@
 # Build context is the repository root, not this folder -- see docker-compose.yml.
 FROM python:3.14.7-slim-trixie
 
-# Send print() output straight through so `docker logs` shows the summary lines live.
+# Send print() output straight through so `docker logs` shows the progress lines live.
 ENV PYTHONUNBUFFERED=1
-# Skip writing .pyc files; the container filesystem is thrown away after every run.
+# Skip writing .pyc files; the image is rebuilt rather than updated in place.
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Everything below lives under /app, so `python -m src.book.main` resolves from there.

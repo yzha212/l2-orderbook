@@ -97,7 +97,7 @@ class OrderBook:
         self.frames += 1
         self.timestamp = frame.timestamp  # the goal: the last frame processed, in one place
         self.sequence_num = frame.sequence_num
-        self.check_crossed()  # cheap enough per frame, and the guarantee is worth checking
+        self.check_crossed()  # two end lookups on a sorted side, so the guarantee is near free
 
     def _load(self, levels: list[PriceLevel]) -> None:
         """Apply a batch of price levels to whichever side each one names.
@@ -179,7 +179,8 @@ class OrderBook:
         """Describe the top of the book in one short phrase.
 
         Returns:
-            The best bid and ask with the depth behind each, for the per-frame log line.
+            The best bid and ask with the depth behind each, for the closing summary
+            and the --verbose line.
         """
         return f"bid={self.best_bid()}x{len(self.bids)} ask={self.best_ask()}x{len(self.asks)}"
 
