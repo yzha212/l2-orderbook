@@ -20,7 +20,7 @@ from confluent_kafka import KafkaError, KafkaException, Message, Producer  # lib
 
 WS_URL = "wss://advanced-trade-ws.coinbase.com"
 PRODUCT_ID = "BTC-USD"
-TOPIC = "l2.raw.btc-usd"  # must match the topic `topic-init` creates in docker-compose.yml
+RAW_TOPIC = "l2.raw.btc-usd"  # must match the topic `topic-init` creates in docker-compose.yml
 BROKERS = os.environ.get("REDPANDA_BROKERS", "redpanda-0:9092")  # host runs use localhost:19092
 MAX_MESSAGE_BYTES = 8 * 1024 * 1024  # the opening snapshot runs ~5 MB, over the 1 MB default
 FLUSH_TIMEOUT = 10.0  # short enough that the drain finishes inside the compose grace period
@@ -146,11 +146,11 @@ def capture(duration: float) -> None:
         """Publish one incoming frame, and now and then say how the capture is doing."""
         payload = message.encode("utf-8")
         try:  # EAFP: enqueue, and only deal with a full queue if it actually happens
-            producer.produce(TOPIC, key=PRODUCT_ID, value=payload, on_delivery=on_delivery)
+            producer.produce(RAW_TOPIC, key=PRODUCT_ID, value=payload, on_delivery=on_delivery)
         except BufferError:
             producer.poll(1.0)
             try:  # one retry; a second failure means the backlog is real, not a momentary spike
-                producer.produce(TOPIC, key=PRODUCT_ID, value=payload, on_delivery=on_delivery)
+                producer.produce(RAW_TOPIC, key=PRODUCT_ID, value=payload, on_delivery=on_delivery)
             except BufferError:
                 stats["dropped"] += 1
                 print("[warn] producer queue full, frame dropped")
@@ -203,7 +203,7 @@ def capture(duration: float) -> None:
         elapsed = time.monotonic() - started
         published = stats["frames"] - stats["dropped"]
         print(f"captured {stats['frames']} frames in {elapsed:.1f}s")
-        print(f"published {published} to {TOPIC} at {BROKERS}")
+        print(f"published {published} to {RAW_TOPIC} at {BROKERS}")
         if pending:
             print(f"[warn] {pending} messages still undelivered after {FLUSH_TIMEOUT:.0f}s")
         if stats["dropped"]:

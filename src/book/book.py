@@ -14,14 +14,44 @@ at the end and never has to be searched for. On a plain dict the best bid and as
 scan of every level, which is what the reader spent nearly all its time doing.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
+import msgspec  # describes the published record, and writes Decimals as JSON strings
 from sortedcontainers import SortedDict  # holds each side in price order, best price at an end
 
 from src.decode.messages import L2Frame, PriceLevel, Snapshot, Update
 
 ZERO = Decimal(0)  # built once, because every level applied compares against it
+
+
+class TopLevels(msgspec.Struct):
+    """The best levels from each side of the book, as one published record.
+
+    This is what the book builder writes to its own topic on a fixed rhythm, and what the
+    dashboard and the book archiver will decode. Prices and sizes stay Decimal here and
+    msgspec writes them as JSON strings, which is its default: a bare JSON number arrives as
+    a float in nearly every reader, and a float cannot hold "0.00500000" without dropping the
+    trailing zeros that say how finely this exchange quotes size.
+
+    Attributes:
+        sequence_num: The counter on the most recent frame applied, so a record can be traced
+            back to a frame in the raw topic.
+        timestamp: When the exchange sent that frame. Together with the levels it means "the
+            book was exactly this, as of then".
+        published_at: When this record was built, so a reader can tell how stale it is.
+        doubtful: True when the stream lost a frame, so a book that may have drifted from the
+            exchange says so rather than passing as sound.
+        bids: The highest bids, best price first.
+        asks: The lowest asks, best price first.
+    """
+
+    sequence_num: int | None
+    timestamp: datetime | None
+    published_at: datetime
+    doubtful: bool
+    bids: list[tuple[Decimal, Decimal]]
+    asks: list[tuple[Decimal, Decimal]]
 
 
 class OrderBook:
@@ -174,6 +204,32 @@ class OrderBook:
             return False
         self.crossings += 1
         return True
+
+    def top(self, depth: int) -> TopLevels:
+        """Take the best levels from each side, as a record ready to publish.
+
+        Two slices and no scan, because each side is already held in price order. The depth
+        is a parameter rather than something the book stores: the book has no business
+        knowing how much of itself a caller wants to publish.
+
+        Args:
+            depth: How many levels to take from each side, one or more. A side holding fewer
+                than that gives up everything it has.
+
+        Returns:
+            Those levels, best price first on both sides, together with the frame the book is
+            complete as of.
+        """
+        bids = self.bids.items()[-depth:]  # the best bids sit at the end of an ascending side
+        asks = self.asks.items()[:depth]  # and the best asks at the start of that same order
+        return TopLevels(
+            sequence_num=self.sequence_num,
+            timestamp=self.timestamp,
+            published_at=datetime.now(UTC),
+            doubtful=self.doubtful,
+            bids=list(reversed(bids)),  # turned around, so the highest bid comes first
+            asks=asks,
+        )
 
     def quote(self) -> str:
         """Describe the top of the book in one short phrase.

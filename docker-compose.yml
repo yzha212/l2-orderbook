@@ -75,7 +75,7 @@ services:
   topic-init:
     container_name: l2-topic-init
     image: docker.redpanda.com/redpandadata/redpanda:v25.1.1
-    # One-shot: create the stage-2 buffer topic, verify it, exit. Not a long-running service.
+    # One-shot: create the topics the services need, verify them, exit. Not long-running.
     entrypoint: /bin/sh
     command:
       - -c
@@ -101,6 +101,21 @@ services:
         rpk topic list -X brokers=redpanda-0:9092 | grep -q '^l2.raw.btc-usd'
         # Print the settled config so `docker compose logs topic-init` shows what landed.
         rpk topic describe l2.raw.btc-usd -X brokers=redpanda-0:9092
+        # Stage 4's output: the top of the book, published about ten times a second. No
+        # max.message.bytes here because a record of ten levels a side is around a kilobyte.
+        rpk topic create l2.book.btc-usd -p 1 -r 1 \
+          -c retention.ms=3600000 \
+          -c segment.ms=600000 \
+          -X brokers=redpanda-0:9092 || true
+        # Set unconditionally for the same reason as above: create is a no-op on an existing
+        # topic. An hour of retention, because a consumer wants the live book, not history.
+        # segment.ms sits well under that hour, because only a closed segment gets deleted.
+        rpk topic alter-config l2.book.btc-usd \
+          --set retention.ms=3600000 \
+          --set segment.ms=600000 \
+          -X brokers=redpanda-0:9092
+        rpk topic list -X brokers=redpanda-0:9092 | grep -q '^l2.book.btc-usd'
+        rpk topic describe l2.book.btc-usd -X brokers=redpanda-0:9092
     networks:
       - redpanda_network
     depends_on:
