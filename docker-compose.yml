@@ -39,6 +39,10 @@ services:
       - 18082:18082
       - 19092:19092
       - 19644:9644
+    # No restart policy on purpose, which means the Docker default of "no". Nothing in this
+    # pipeline should come back by itself after a reboot; it is started when someone starts
+    # it. Do not "fix" this by adding unless-stopped -- that is what the services downstream
+    # used to have, and it is how they ended up running without this broker for hours.
     # The broker accepts connections before it can serve topic admin calls, so anything
     # that creates topics must gate on this, not on the container merely starting.
     healthcheck:
@@ -104,14 +108,21 @@ services:
         # Stage 4's output: the top of the book, published about ten times a second. No
         # max.message.bytes here because a record of ten levels a side is around a kilobyte.
         rpk topic create l2.book.btc-usd -p 1 -r 1 \
-          -c retention.ms=3600000 \
+          -c retention.ms=86400000 \
           -c segment.ms=600000 \
           -X brokers=redpanda-0:9092 || true
         # Set unconditionally for the same reason as above: create is a no-op on an existing
-        # topic. An hour of retention, because a consumer wants the live book, not history.
-        # segment.ms sits well under that hour, because only a closed segment gets deleted.
+        # topic. A day of retention rather than the hour this used to keep, because the topic
+        # is now what holds the records that are not on disk yet: the archiver records its
+        # position only after a whole bucket has been written and moved into place, so a stop
+        # or a crash sends it back to the last bucket boundary to read those records again.
+        # How long this topic keeps them is therefore how long the archiver can be down before
+        # records are deleted before they were ever archived, which is the one loss nothing
+        # here can undo. An hour left about forty-five minutes of room; a day matches the raw
+        # topic, survives being left off overnight, and costs roughly 600 MB.
+        # segment.ms sits well under that, because only a closed segment gets deleted.
         rpk topic alter-config l2.book.btc-usd \
-          --set retention.ms=3600000 \
+          --set retention.ms=86400000 \
           --set segment.ms=600000 \
           -X brokers=redpanda-0:9092
         rpk topic list -X brokers=redpanda-0:9092 | grep -q '^l2.book.btc-usd'
@@ -143,8 +154,14 @@ services:
       # the topic is the buffer and the book waits on an empty one, so either order is fine.
       book:
         condition: service_started
-    # The capture runs until stopped now, so a crash should bring it straight back.
-    restart: unless-stopped
+    # on-failure, not unless-stopped: a crash exits non-zero and should come straight back,
+    # but a reboot should start nothing at all. Docker restarts an unless-stopped container
+    # when the daemon itself starts, and on 11 Sep that brought this service back after a
+    # reboot while redpanda-0 -- which has no restart policy -- stayed down, so it ran for
+    # three and a half hours talking to a broker that was not there. on-failure covers the
+    # crash and not the reboot. A clean stop exits zero, so `compose stop` still means stopped.
+    # The capture itself runs until stopped.
+    restart: on-failure
     # The producer drains its queue for up to 10 s on stop; leave room before the kill.
     stop_grace_period: 15s
 
@@ -170,8 +187,85 @@ services:
     depends_on:
       topic-init:
         condition: service_completed_successfully
-    # Reads until stopped, so a crash should bring it straight back. Be aware that a restart
-    # replays the retained topic from the beginning, which is how it finds a snapshot again.
-    restart: unless-stopped
+    # on-failure, not unless-stopped: a crash exits non-zero and should come straight back,
+    # but a reboot should start nothing at all. Docker restarts an unless-stopped container
+    # when the daemon itself starts, and on 11 Sep that brought this service back after a
+    # reboot while redpanda-0 -- which has no restart policy -- stayed down, so it ran for
+    # three and a half hours talking to a broker that was not there. on-failure covers the
+    # crash and not the reboot. A clean stop exits zero, so `compose stop` still means stopped.
+    # Be aware that a restart replays the retained topic from the beginning, which is how
+    # this service finds a snapshot again.
+    restart: on-failure
     stop_grace_period: 15s
 
+  dashboard:
+    # No container_name: `docker compose run` ignores it and names the container itself, so
+    # setting one here would only promise something the way this service is started cannot keep.
+    build:
+      # Build from the repo root so COPY can reach both requirements.txt and src/.
+      context: .
+      # The Dockerfile is colocated with the service it builds.
+      dockerfile: src/dashboard/Dockerfile
+    # Reads the published book and draws it; no bind mount, no files written.
+    environment:
+      REDPANDA_BROKERS: redpanda-0:9092
+      # Its own group, for the same reason the book service has one: members of a group split
+      # the partitions between them, so a shared id on this single-partition topic would leave
+      # one of the two services reading nothing at all, with no error to say so.
+      CONSUMER_GROUP: l2-dashboard
+    networks:
+      - redpanda_network
+    # A terminal, not a pipe. Rich checks what stdout is attached to and quietly turns the live
+    # refresh off when it is not a terminal, printing one frame at the end instead of updating.
+    tty: true
+    stdin_open: true
+    # Kept out of `docker compose up`, so its escape sequences never land in the shared log.
+    # This is a view you open when you want it: `docker compose run --rm dashboard`, which
+    # turns the profile on by itself and attaches a terminal.
+    profiles:
+      - dashboard
+    # Only the topic has to exist; an empty one is something to wait on, as it is for the book.
+    depends_on:
+      topic-init:
+        condition: service_completed_successfully
+    # No restart policy: this is run on demand and ends when the person watching stops it.
+
+  book-archive:
+    container_name: l2-book-archive
+    build:
+      # Build from the repo root so COPY can reach both requirements.txt and src/.
+      context: .
+      # The Dockerfile is colocated with the service it builds.
+      dockerfile: src/book_archive/Dockerfile
+    # The one service that writes files. Buckets land in /app/data inside the container and
+    # this surfaces them on the host, where they can be queried without a docker cp first.
+    volumes:
+      - ./data:/app/data
+    # Match the host uid:gid so the .parquet files are readable and deletable without sudo.
+    # Without this the container runs as root and every file it writes is owned by root.
+    user: "1000:1000"
+    environment:
+      REDPANDA_BROKERS: redpanda-0:9092
+      # Its own group, for the same reason the book service has one: members of a group split
+      # the partitions between them, so a shared id on this single-partition topic would leave
+      # one of the two services reading nothing at all, with no error to say so. Here the group
+      # does a second job as well -- it is what stops two archivers writing the same file.
+      CONSUMER_GROUP: l2-book-archive
+    networks:
+      - redpanda_network
+    # Only the topic has to exist; an empty one is something to wait on, as it is for the book.
+    depends_on:
+      topic-init:
+        condition: service_completed_successfully
+    # on-failure, not unless-stopped: a crash exits non-zero and should come straight back,
+    # but a reboot should start nothing at all. Docker restarts an unless-stopped container
+    # when the daemon itself starts, and on 11 Sep that brought this service back after a
+    # reboot while redpanda-0 -- which has no restart policy -- stayed down, so it ran for
+    # three and a half hours talking to a broker that was not there. on-failure covers the
+    # crash and not the reboot. A clean stop exits zero, so `compose stop` still means stopped.
+    # A restart goes back to the last bucket boundary and reads those records again, which
+    # is why the book topic keeps a day rather than an hour.
+    restart: on-failure
+    # A stop drops the bucket still being gathered and leaves its position unrecorded, which
+    # costs nothing; the time here is for the fetch in flight and for leaving the group cleanly.
+    stop_grace_period: 15s

@@ -6,6 +6,9 @@ This repository contains the components that ingests BTC-USD (one symbol only) L
 - Dependency management: `pip` and `requirements.txt`, do NOT use other package manager.
 - Python 3.14, pinned via the `python:3.14.7-slim-trixie` base image; code targets 3.14+ syntax.
 - Branch from `main` as `feature/<name>` and use Coventional Commits.
+- A host venv exists at `./.venv` (Python 3.12) with `requirements.txt` installed, for fast local checks. Invoke it as `.venv/bin/python`, never via `activate` — a shell `source` does not survive between tool calls. 
+- Docker (Python 3.14) remains the source of truth; the venv is for quick feedback, not final verification.
+- For final verification, run the services in docker containers and gather evidence from the containers.
 
 ## Agreements
 - The approach is to build the simplest version of each component in order as exploration first, implement the data flow end to end first, then add more features to the components.

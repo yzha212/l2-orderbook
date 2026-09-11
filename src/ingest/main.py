@@ -125,13 +125,20 @@ def capture(duration: float) -> None:
         )
 
     def on_delivery(error: KafkaError | None, message: Message) -> None:
-        """Report a frame that never landed; a delivered one is counted, not printed.
+        """Count and report a frame that never landed; a delivered one is neither.
+
+        Counted here as well as printed, which it was not until a reboot left this service
+        running for three and a half hours against a broker that was not there. Every frame
+        was accepted into the producer queue, so nothing raised, and every one was then
+        discarded when it hit the delivery timeout -- while the progress line, which only
+        knew about frames the queue had refused outright, went on reporting `dropped 0`.
 
         Args:
             error: The broker-side failure, or None when the frame landed.
             message: The delivered record, carrying its partition and offset.
         """
         if error is not None:  # a frame that never landed must be visible, not swallowed
+            stats["dropped"] += 1
             print(f"[delivery failed] {error}")
 
     def on_open(ws: websocket.WebSocketApp) -> None:
@@ -206,8 +213,8 @@ def capture(duration: float) -> None:
         print(f"published {published} to {RAW_TOPIC} at {BROKERS}")
         if pending:
             print(f"[warn] {pending} messages still undelivered after {FLUSH_TIMEOUT:.0f}s")
-        if stats["dropped"]:
-            print(f"[warn] {stats['dropped']} frames never reached the producer queue")
+        if stats["dropped"]:  # either refused by the queue, or discarded on the way out of it
+            print(f"[warn] {stats['dropped']} frames never reached {RAW_TOPIC}")
 
 
 def main() -> None:

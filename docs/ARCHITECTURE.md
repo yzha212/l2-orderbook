@@ -41,10 +41,25 @@ frame as it arrived, and maintains a verified in-memory copy of the order book f
 - output: The current top 10 order book, published every 100 ms, use the most recent frame applied as the timestamp
 - guarantee:  Best bid stays below best ask, and sizes are never negative.
 
-## 5. live dashboard
+## 5. book topic
+- role: buffer the top 10 order book, decouple the book builder from downstream services
+- output: One ordered streaming of order books, read independently by each downstream consumer
+- guarantee: consumer can restart and resume the work without loosing frames
 
-- role: showing the live trading book in terminal with latency and metrics such as bid-ask spread
-- output: 10 frames per second, metrics to be decided
+## 6. live dashboard
+
+- role: showing the live trading book in terminal as verification of the in-memory order book
+- output: 10 frames per second; view only with no user interactions; show bid-ask spread and latency
+
+## 7. Book archiver
+
+- role: read the order book from the book topic, and save the order book in parquet file; book depth and frequency is determined by the book builder
+- output: parquet archives under /data
+
+## 8. Raw archiver
+
+- role: read the ingestion topic, and save the raw frames
+- output: archives under /raw
 
 ## Flow chart
 
@@ -88,5 +103,5 @@ flowchart TD
 ```
 
 ## out of scope
-Storage and validation and query are deliberately not described in this document.
+validation and query are deliberately not described in this document.
 
