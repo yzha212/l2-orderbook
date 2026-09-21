@@ -269,3 +269,40 @@ services:
     # A stop drops the bucket still being gathered and leaves its position unrecorded, which
     # costs nothing; the time here is for the fetch in flight and for leaving the group cleanly.
     stop_grace_period: 15s
+
+  raw-archive:
+    container_name: l2-raw-archive
+    build:
+      # Build from the repo root so COPY can reach both requirements.txt and src/.
+      context: .
+      # The Dockerfile is colocated with the service it builds.
+      dockerfile: src/raw_archive/Dockerfile
+    # The second service that writes files, and the more important one: these are the frames
+    # everything else is derived from. Buckets land in /app/raw inside the container and this
+    # surfaces them on the host.
+    volumes:
+      - ./raw:/app/raw
+    # Match the host uid:gid so the files are readable and deletable without sudo. Without this
+    # the container runs as root and every file it writes is owned by root.
+    user: "1000:1000"
+    environment:
+      REDPANDA_BROKERS: redpanda-0:9092
+      # Its own group, for the same reason every other reader has one: members of a group split
+      # the partitions between them, so a shared id on this single-partition topic would leave
+      # one service reading nothing at all, with no error to say so. Here the group does a
+      # second job as well -- it is what stops two archivers writing the same file.
+      CONSUMER_GROUP: l2-raw-archive
+    networks:
+      - redpanda_network
+    # Only the topic has to exist; an empty one is something to wait on, as it is for the book.
+    depends_on:
+      topic-init:
+        condition: service_completed_successfully
+    # on-failure, not unless-stopped: a crash exits non-zero and should come straight back, but
+    # a reboot should start nothing at all. See the ingest service for what unless-stopped cost
+    # us on 11 Sep. A clean stop exits zero, so `compose stop` still means stopped.
+    # A restart goes back to the last bucket boundary and reads those frames again.
+    restart: on-failure
+    # A stop drops the bucket still being gathered and leaves its position unrecorded, which
+    # costs nothing; the time here is for the fetch in flight and for leaving the group cleanly.
+    stop_grace_period: 15s
