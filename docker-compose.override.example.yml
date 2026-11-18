@@ -1,0 +1,55 @@
+# Example machine-local override: route egress through a local HTTP proxy (Hiddify on the
+# host this was written for, listening on port 12334). Turned off on 2026-11-16, because
+# direct access works again.
+#
+# To use it:
+#   1. Copy this file to docker-compose.override.yml, which .gitignore keeps out of git.
+#   2. Uncomment everything below, and change 12334 to the port your own proxy listens on.
+#   3. Run docker compose as usual. Compose merges docker-compose.override.yml into
+#      docker-compose.yml automatically, with no -f flags. It never loads this example file.
+#
+# The copy stays local, so docker-compose.yml stays portable to a machine with no proxy.
+
+# Image builds need the proxy as well as the running containers: pip reaches PyPI from
+# inside the build, and BuildKit inherits no proxy from the host shell. Docker forwards
+# these standard proxy build args into the build as environment variables by itself, so
+# the committed Dockerfiles need no ARG lines and stay portable.
+# x-proxy-build: &proxy-build
+#   # extra_hosts is needed at build time too; the runtime entry below does not cover it.
+#   extra_hosts:
+#     - "host.docker.internal:host-gateway"
+#   args:
+#     https_proxy: http://host.docker.internal:12334/
+#     http_proxy: http://host.docker.internal:12334/
+#     no_proxy: localhost,127.0.0.1,redpanda-0
+
+# services:
+#   ingest:
+#     # Merged key by key into the base file's build block, so context and dockerfile survive.
+#     build: *proxy-build
+#     # Maps the host's gateway address into the container's /etc/hosts as host.docker.internal.
+#     extra_hosts:
+#       - "host.docker.internal:host-gateway"
+#     environment:
+#       # websocket-client reads https_proxy itself for wss:// URLs, so main.py needs no changes.
+#       https_proxy: http://host.docker.internal:12334/
+#       # Set the plain-http variant too, so pip and any other tool in here is covered.
+#       http_proxy: http://host.docker.internal:12334/
+#       # Keep loopback and in-cluster Kafka traffic off the proxy.
+#       no_proxy: localhost,127.0.0.1,redpanda-0
+
+#   book:
+#     # Build time only: at run time this service talks to redpanda-0 and nothing else.
+#     build: *proxy-build
+
+#   dashboard:
+#     # Build time only: at run time this service talks to redpanda-0 and nothing else.
+#     build: *proxy-build
+
+#   book-archive:
+#     # Build time only: at run time this service talks to redpanda-0 and the data folder.
+#     build: *proxy-build
+
+#   raw-archive:
+#     # Build time only: at run time this service talks to redpanda-0 and the raw folder.
+#     build: *proxy-build

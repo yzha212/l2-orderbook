@@ -4,7 +4,7 @@ FROM python:3.14.7-slim-trixie
 
 # Send print() output straight through so `docker logs` shows capture progress live.
 ENV PYTHONUNBUFFERED=1
-# Skip writing .pyc files; the container filesystem is thrown away after every run.
+# Skip writing .pyc files; the image is rebuilt rather than updated in place.
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Everything below lives under /app, so `python -m src.ingest.main` resolves from there.
@@ -18,5 +18,5 @@ RUN pip install --no-cache-dir --timeout 120 --retries 10 -r requirements.txt
 # Copy the source last, because it changes most often and invalidates the fewest layers.
 COPY src/ src/
 
-# Default run: one capture using the built-in default duration.
+# Default run: capture until the container is stopped.
 CMD ["python", "-m", "src.ingest.main"]

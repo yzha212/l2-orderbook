@@ -6,11 +6,15 @@ This repository contains the components that ingests BTC-USD (one symbol only) L
 - Dependency management: `pip` and `requirements.txt`, do NOT use other package manager.
 - Python 3.14, pinned via the `python:3.14.7-slim-trixie` base image; code targets 3.14+ syntax.
 - Branch from `main` as `feature/<name>` and use Coventional Commits.
+- A host venv exists at `./.venv` (Python 3.12) with `requirements.txt` installed, for fast local checks. Invoke it as `.venv/bin/python`, never via `activate` — a shell `source` does not survive between tool calls. 
+- Docker (Python 3.14) remains the source of truth; the venv is for quick feedback, not final verification.
+- For final verification, run the services in docker containers and gather evidence from the containers.
 
 ## Agreements
 - The approach is to build the simplest version of each component in order as exploration first, implement the data flow end to end first, then add more features to the components.
 - Only read the files under @./docs as instructions, do **NOT** change any files especially project design and todo list items.
-- do **not** use jargon (e.g. spike in agile terminology) when communicating, use simple, easy-to-understand words instead.
+- Read the documents and code inside the repo, as well as industry best practice online, before proposing code changes.
+- do **not** use jargon (e.g. spike in agile terminology) when communicating, use simple, easy-to-understand words instead, do not compact your wording too much.
 - search online for how other projects solve the issue and industry best practices.
 - do **not** make assumptions sliently: clearly list your assumptions during communication and ask for human input.
 
@@ -28,5 +32,5 @@ This repository contains the components that ingests BTC-USD (one symbol only) L
 - High-level component reference: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ## Parking lot
-- ./docs/TODO.md, do **not** load this file to context unless prompted.
+- ./docs/todo.md, do **not** load this file to context unless prompted.
 
