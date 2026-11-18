@@ -6,7 +6,7 @@ This repository contains the components that ingests BTC-USD (one symbol only) L
 - Dependency management: `pip` and `requirements.txt`, do NOT use other package manager.
 - Python 3.14, pinned via the `python:3.14.7-slim-trixie` base image; code targets 3.14+ syntax.
 - Branch from `main` as `feature/<name>` and use Coventional Commits.
-- A host venv exists at `./.venv` (Python 3.12) with `requirements.txt` installed, for fast local checks. Invoke it as `.venv/bin/python`, never via `activate` — a shell `source` does not survive between tool calls. 
+- A host venv exists at `./.venv` (Python 3.14) with `requirements.txt` installed, for fast local checks. Invoke it as `.venv/bin/python`, never via `activate` — a shell `source` does not survive between tool calls. 
 - Docker (Python 3.14) remains the source of truth; the venv is for quick feedback, not final verification.
 - For final verification, run the services in docker containers and gather evidence from the containers.
 
@@ -26,6 +26,18 @@ This repository contains the components that ingests BTC-USD (one symbol only) L
 - Follow EAFP: handle exceptions rather than checking conditions up front.
 - Write Google-style docstrings for every public function and method.
 - Embrace simple idiomatic Python like comprehensions, generators, and decorators.
+- Unit Test conventions:
+  - use PyTest as the testing framework
+  - unit tests should be under /tests, with names mirroring the structure of the corresponding source code
+  - only test what is in the file itself, do NOT test dependencies
+    - test non-private properties and methods
+    - test constructors
+    - test edge cases and boundary conditions
+  - test name follow this convention: test_subject_condition_expectation()
+  - always tear down if set up is needed
+  - arrange / act / asset: one act per test; no loops or `if` in tests
+  - tests should be repeatable: no network, no sleep
+  - run test: `.venv/bin/python -m pytest`
 
 ## Design and Architecture
 - Always search online articles and code base for industry best practice when providing designs
