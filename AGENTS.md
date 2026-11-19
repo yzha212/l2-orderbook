@@ -29,7 +29,7 @@ This repository contains the components that ingests BTC-USD (one symbol only) L
 - Unit Test conventions:
   - use PyTest as the testing framework
   - unit tests should be under /tests, with names mirroring the structure of the corresponding source code
-  - only test what is in the file itself, do NOT test dependencies
+  - only test what is in the file itself, do not test dependencies
     - test non-private properties and methods
     - test constructors
     - test edge cases and boundary conditions
