@@ -1,0 +1,16 @@
+# pytest settings only. Dependencies live in requirements.txt, never here.
+# Needs pytest 9.0 or later, which is when pytest.toml was introduced.
+[pytest]
+minversion = "9.0"
+# Look for tests only under tests/, so a bare `pytest` never wanders into src/ or data/.
+testpaths = ["tests"]
+# Put the repo root on the import path, so `from src.book.book import ...` works
+# exactly as it does inside the Docker images (src has no __init__.py).
+pythonpath = ["."]
+# -ra: list every test that did not plainly pass (skipped, xfailed, ...) in the summary.
+# importlib: the import mode pytest recommends for new projects; test files in different
+# folders may share a name (tests/book/test_main.py, tests/ingest/test_main.py).
+addopts = ["-ra", "--import-mode=importlib"]
+# Turn on every strictness check: unknown settings and markers are errors, an xfail test
+# that passes fails the run, and parametrize ids must be unique.
+strict = true

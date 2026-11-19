@@ -10,3 +10,7 @@ venv/
 
 # Machine-local compose overrides (VPN proxy wiring); not portable to other hosts
 docker-compose.override.yml
+
+# Test tools: pytest's last-run cache and Hypothesis's database of failing examples
+.pytest_cache/
+.hypothesis/
