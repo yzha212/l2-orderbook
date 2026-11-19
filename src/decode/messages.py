@@ -161,8 +161,8 @@ class UnknownFrame(msgspec.Struct):
 class _Probe(msgspec.Struct):
     """The few fields needed to classify a frame the tagged union rejected.
 
-    Every field is optional and msgspec ignores the rest, so this decodes any JSON object at
-    all and only ever reports what the frame claimed to be.
+    Reads any JSON object whose channel, type and message are text and whose sequence_num is
+    a whole number, each of them optional; anything else raises ValidationError.
     """
 
     channel: str | None = None
@@ -181,17 +181,20 @@ _probe = msgspec.json.Decoder(_Probe)
 def decode_frame(payload: bytes) -> Frame:
     """Decode one raw frame into a typed object.
 
+    Modelled channels get their own type. Anything else goes to a second, smaller read
+    (_Probe), which makes it an ErrorFrame or an UnknownFrame, or refuses it.
+
     Args:
         payload: The frame exactly as the exchange sent it, as UTF-8 bytes.
 
     Returns:
-        A typed frame. Channels this module models each become their own type; a channel it
-        does not model becomes an UnknownFrame carrying the channel name.
+        L2Frame, HeartbeatFrame or SubscriptionsFrame for a modelled channel; ErrorFrame for
+        an object with no channel and type "error"; UnknownFrame for any other JSON object.
 
     Raises:
-        msgspec.ValidationError: The frame came from a channel we model, but its contents do
-            not match the schema.
-        msgspec.DecodeError: The payload is not valid JSON.
+        msgspec.ValidationError: A modelled channel with bad contents, or JSON not shaped like
+            a frame (not an object, or a channel, type, message or sequence_num of wrong type).
+        msgspec.DecodeError: Not valid JSON. ValidationError subclasses it, so catch that first.
     """
     try:  # EAFP: nearly every frame is a channel we model, so decode first and ask later
         return _frames.decode(payload)

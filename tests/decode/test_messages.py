@@ -335,6 +335,15 @@ def test_decode_frame_error_without_message_returns_empty_message() -> None:
     assert frame == ErrorFrame(message="")
 
 
+def test_decode_frame_error_with_unmodelled_channel_returns_unknown_frame() -> None:
+    """Only an error with no channel is an ErrorFrame; one naming another channel is unknown."""
+    payload = encode({"channel": "ticker", "type": "error", "message": "failure to subscribe"})
+
+    frame = decode_frame(payload)
+
+    assert frame == UnknownFrame(channel="ticker", sequence_num=None)
+
+
 # --- A channel we model with bad contents -> ValidationError --------------------------------
 
 
@@ -397,18 +406,28 @@ def test_decode_frame_known_channel_bad_contents_names_the_field() -> None:
         b'"text"',
         b"null",
         b'{"channel":5}',
+        b'{"type":5}',
+        b'{"type":"error","message":5}',
         b'{"channel":"ticker","sequence_num":"7"}',
     ],
-    ids=["array", "number", "string", "null", "channel-not-text", "unmodelled-counter-as-text"],
+    ids=[
+        "array",
+        "number",
+        "string",
+        "null",
+        "channel-not-text",
+        "type-not-text",
+        "error-message-not-text",
+        "unmodelled-counter-as-text",
+    ],
 )
 def test_decode_frame_not_shaped_like_a_frame_raises_validation_error(payload: bytes) -> None:
-    """Today's behaviour, wider than decode_frame's own docstring.
+    """Valid JSON that is not shaped like a frame is refused as well, as the docstring says.
 
-    The docstring says ValidationError means one of our channels sent broken contents. These
-    payloads are valid JSON and none is one of our channels, yet each raises it: the second,
-    smaller look decode_frame takes (the private _Probe) needs a JSON object, a text channel
-    and a whole-number sequence_num, and its own error escapes when those are not met.
-    handle() in src/book/main.py catches it and logs [invalid], so nothing reaches the book.
+    None of these is one of our channels. The second, smaller read decode_frame takes (the
+    private _Probe) needs a JSON object with text channel, type and message and a whole-number
+    sequence_num, and its own error escapes when those are not met. handle() in
+    src/book/main.py catches it and logs [invalid], so nothing reaches the book.
     """
     with pytest.raises(msgspec.ValidationError):
         decode_frame(payload)
