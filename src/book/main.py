@@ -533,7 +533,7 @@ def main() -> None:
         help="milliseconds between published records",
     )
     args = parser.parse_args()
-    if args.depth < 1:  # a depth of zero slices out a whole side rather than nothing at all
+    if args.depth < 1:  # top() refuses it too; this says so at start-up, with a usage line
         parser.error("--depth must be 1 or more")
     if args.interval_ms <= 0:  # a rhythm of zero would spin the loop instead of pacing it
         parser.error("--interval-ms must be above zero")

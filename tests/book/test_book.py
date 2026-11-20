@@ -608,6 +608,19 @@ def test_top_depth_larger_than_side_returns_whole_side() -> None:
     assert levels.asks == decimals(("101", "1"), ("102", "2"))
 
 
+def test_top_depth_one_more_than_side_returns_whole_side() -> None:
+    """A depth just above the side's size still gives the whole side.
+
+    The start is len - depth; without the floor at zero, 3 levels at depth 4 would start at
+    -1 and hand back only the best bid.
+    """
+    three_bids = book_with(bids=[("98", "2"), ("99", "3"), ("100", "4")])
+
+    levels = three_bids.top(4)
+
+    assert levels.bids == decimals(("100", "4"), ("99", "3"), ("98", "2"))
+
+
 def test_top_depth_one_returns_best_level_only() -> None:
     """Depth one, the smallest allowed, is just the best price on each side."""
     deep = book_with(bids=[("99", "1"), ("100", "2")], asks=[("101", "3"), ("102", "4")])
@@ -626,24 +639,17 @@ def test_top_empty_book_returns_empty_sides(book: OrderBook) -> None:
     assert levels.asks == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="known bug: top() does not guard depth < 1, and bids.items()[-0:] is the whole side",
-)
 @pytest.mark.parametrize("depth", [0, -1], ids=["zero", "negative"])
-def test_top_depth_below_one_returns_no_levels(depth: int) -> None:
-    """Asking for fewer than one level should never hand back levels.
+def test_top_depth_below_one_raises_value_error(depth: int) -> None:
+    """Fewer than one level is a caller's mistake, so top() refuses it instead of guessing.
 
-    Marked xfail(strict=True): it fails today because of the bug above. Once top() is fixed
-    this test passes, strict turns that into a failed run, and the mark must be removed.
+    These are the two values the old slices got wrong: -0 is 0, so bids[-0:] was the whole
+    side, and -1 turned the slices into bids[1:] and asks[:-1].
     """
-    two_sided = book_with(bids=[("99", "1"), ("100", "2")], asks=[("101", "3")])
+    two_sided = book_with(bids=[("99", "1"), ("100", "2")], asks=[("101", "3"), ("102", "4")])
 
-    levels = two_sided.top(depth)
-
-    assert levels.bids == []
-    assert levels.asks == []
+    with pytest.raises(ValueError, match="depth must be 1 or more"):
+        two_sided.top(depth)
 
 
 def test_top_record_carries_last_frame_and_doubtful_flag(loaded_book: OrderBook) -> None:

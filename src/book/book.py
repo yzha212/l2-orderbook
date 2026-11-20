@@ -219,8 +219,14 @@ class OrderBook:
         Returns:
             Those levels, best price first on both sides, together with the frame the book is
             complete as of.
+
+        Raises:
+            ValueError: If depth is below one.
         """
-        bids = self.bids.items()[-depth:]  # the best bids sit at the end of an ascending side
+        if depth < 1:  # a caller's mistake; an empty record would pass for an empty book
+            raise ValueError(f"depth must be 1 or more, got {depth}")
+        start = max(len(self.bids) - depth, 0)  # from the front, so depth is never negated
+        bids = self.bids.items()[start:]  # the best bids sit at the end of an ascending side
         asks = self.asks.items()[:depth]  # and the best asks at the start of that same order
         return TopLevels(
             sequence_num=self.sequence_num,
