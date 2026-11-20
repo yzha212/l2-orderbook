@@ -1,0 +1,31 @@
+# Runs the unit tests on GitHub for every push and every pull request.
+name: Tests
+
+on:
+  push:          # every branch
+  pull_request:  # every pull request, whatever branch it targets
+
+# The job only reads the code; give the automatic GitHub token no more than that.
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    # A hung test should fail the run quickly instead of holding a runner for the 6-hour default.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          # Same version as the FROM line of src/*/Dockerfile (python:3.14.7-slim-trixie).
+          # Change both together when Python is upgraded.
+          python-version: "3.14.7"
+          # Keep pip's downloads between runs; rebuilt whenever requirements.txt changes.
+          cache: pip
+      # Same pinned packages as the Dockerfiles. No --no-cache-dir: that would defeat the cache.
+      - run: pip install -r requirements.txt
+      # Print the version, so each run's log shows which Python it actually used.
+      - run: python --version
+      # pytest.toml supplies the test folder, the import path and the strict settings.
+      - run: python -m pytest
